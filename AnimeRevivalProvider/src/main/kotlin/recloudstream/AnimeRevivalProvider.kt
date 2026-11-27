@@ -1,4 +1,4 @@
-package recloudstream
+dpackage recloudstream
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -75,11 +75,20 @@ class AnimeRevivalProvider : MainAPI() {
                 lowerName.contains("ending") ||
                 lowerName.contains("soundtrack") ||
                 lowerName.contains("sound track") ||
+                lowerName.contains("sound trip") ||
+                lowerName.contains("random videos") ||
+                lowerName.contains("requests") ||
+                lowerName.contains("register") ||
+                lowerName.contains("account") ||
+                lowerName.contains("tv shows") ||
                 lowerName.contains("ost") ||
                 lowerUrl.contains("download") ||
                 lowerUrl.contains("soundtrack") ||
+                lowerUrl.contains("sound-trip") ||
                 lowerUrl.contains("opening") ||
-                lowerUrl.contains("ending")
+                lowerUrl.contains("ending") ||
+                lowerUrl.contains("register") ||
+                lowerUrl.contains("tv-shows")
 
             val isBlocked = epUrl == url ||
                 epUrl == "$mainUrl/" ||
@@ -106,6 +115,7 @@ class AnimeRevivalProvider : MainAPI() {
 
 
 
+
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = poster
             this.plot = plot
@@ -113,29 +123,64 @@ class AnimeRevivalProvider : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
+        override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val doc = app.get(data).document
-        val iframeUrl = doc.selectFirst("iframe[src], iframe[data-src]")
-            ?.let { it.attr("abs:src").ifBlank { it.attr("abs:data-src") } }
+        val rawHtml = doc.html()
+        var found = false
 
-        if (!iframeUrl.isNullOrBlank()) {
-            loadExtractor(iframeUrl, data, subtitleCallback, callback)
-            return true
+        val frameUrls = doc.select("iframe, embed, video, source").mapNotNull { el ->
+            val raw = el.attr("abs:src").ifBlank {
+                el.attr("abs:data-src").ifBlank {
+                    el.attr("src").ifBlank { el.attr("data-src") }
+                }
+            }.trim()
+            if (raw.isBlank()) null else fixUrl(raw)
+        }.distinct()
+
+        for (link in frameUrls) {
+            loadExtractor(link, data, subtitleCallback, callback)
+            if (link.contains(".m3u8") || link.contains(".mp4")) {
+                callback(
+                    newExtractorLink(
+                        this.name,
+                        this.name,
+                        link,
+                        ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = data
+                    }
+                )
+            }
+            found = true
         }
-        val videoUrl = doc.selectFirst("video source[src], video[src]")
-            ?.attr("abs:src")
 
-        if (!videoUrl.isNullOrBlank()) {
-            loadExtractor(videoUrl, data, subtitleCallback, callback)
-            return true
+        val regexUrls = Regex("""https?://[^\s"'<>]+(?:\.m3u8|\.mp4)[^\s"'<>]*""")
+            .findAll(rawHtml)
+            .map { it.value.replace("\\/", "/") }
+            .distinct()
+
+        for (mediaUrl in regexUrls) {
+            callback(
+                newExtractorLink(
+                    this.name,
+                    this.name,
+                    mediaUrl,
+                    ExtractorLinkType.VIDEO
+                ) {
+                    this.referer = data
+                }
+            )
+            found = true
         }
 
-        return false
+        return found
+    }
+
     }
 
 }
