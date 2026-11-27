@@ -34,20 +34,28 @@ class AnimeRevivalProvider : MainAPI() {
         )
     }
 
-    override suspend fun search(query: String): List<SearchResponse> {
+        override suspend fun search(query: String): List<SearchResponse> {
         val doc = app.get("$mainUrl/?s=$query").document
-        return doc.select("a").mapNotNull { element ->
-            val title = element.text().trim()
-            val href = element.attr("abs:href")
-            if (title.isNotEmpty() && href.startsWith(mainUrl) && href != "$mainUrl/") {
+        val cleanQuery = query.trim().lowercase()
+        val blockedTitles = setOf("home", "anime movies", "anime series", "contact", "about", "privacy policy", "dmca")
+
+        return doc.select("a[href]").mapNotNull { el ->
+            val title = el.text().trim()
+            val href = el.attr("abs:href")
+            val isBlockedUrl = href.contains("/category/") || href.contains("/tag/") || href.contains("/page/")
+            val isBlockedTitle = title.isEmpty() || blockedTitles.any { title.equals(it, ignoreCase = true) }
+            val matchesQuery = title.lowercase().contains(cleanQuery) || href.lowercase().contains(cleanQuery)
+
+            if (title.isNotEmpty() && href.startsWith(mainUrl) && href != "$mainUrl/" && !isBlockedUrl && !isBlockedTitle && matchesQuery) {
                 newAnimeSearchResponse(title, href, TvType.Anime) {
-                    posterUrl = element.selectFirst("img")?.attr("abs:src")
+                    posterUrl = el.selectFirst("img")?.attr("abs:src")
                 }
             } else {
                 null
             }
         }.distinctBy { it.url }
     }
+
 
         override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
