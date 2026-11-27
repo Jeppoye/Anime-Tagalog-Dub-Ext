@@ -70,7 +70,8 @@ class AnimeRevivalProvider : MainAPI() {
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = poster
             this.plot = plot
-            this.episodes = episodes
+            this.episodes = mutableMapOf(DubStatus.None to episodes)
+
         }
     }
 
