@@ -49,7 +49,7 @@ class AnimeRevivalProvider : MainAPI() {
         }.distinctBy { it.url }
     }
 
-    override suspend fun load(url: String): LoadResponse {
+        override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
         val title = doc.selectFirst("h1")?.text()?.trim() ?: name
         val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
@@ -58,7 +58,18 @@ class AnimeRevivalProvider : MainAPI() {
         val episodes = doc.select("a[href]").mapNotNull { el ->
             val epUrl = el.attr("abs:href")
             val epName = el.text().trim()
-            if (epUrl != url && epUrl.startsWith(mainUrl) && epName.isNotEmpty()) {
+            val isEpisodeLink = epUrl.startsWith(mainUrl) &&
+                epUrl != url &&
+                !epUrl.endsWith("/") &&
+                !epUrl.contains("/category/") &&
+                !epUrl.contains("/tag/") &&
+                epName.isNotEmpty() &&
+                !epName.equals("Home", ignoreCase = true) &&
+                !epName.contains("Anime Movies", ignoreCase = true) &&
+                !epName.contains("Anime Series", ignoreCase = true) &&
+                (epUrl.contains("/e") || epName.matches(Regex(".*\\d+.*")))
+
+            if (isEpisodeLink) {
                 newEpisode(epUrl) {
                     this.name = epName
                 }
@@ -71,7 +82,6 @@ class AnimeRevivalProvider : MainAPI() {
             this.posterUrl = poster
             this.plot = plot
             this.episodes = mutableMapOf(DubStatus.None to episodes)
-
         }
     }
 
@@ -82,8 +92,32 @@ class AnimeRevivalProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val doc = app.get(data).document
-        val iframeUrl = doc.selectFirst("iframe")?.attr("abs:src") ?: return false
-        loadExtractor(iframeUrl, data, subtitleCallback, callback)
-        return true
+        val iframeUrl = doc.selectFirst("iframe[src], iframe[data-src]")
+            ?.let { it.attr("abs:src").ifBlank { it.attr("abs:data-src") } }
+
+        if (!iframeUrl.isNullOrBlank()) {
+            loadExtractor(iframeUrl, data, subtitleCallback, callback)
+            return true
+        }
+
+        val videoUrl = doc.selectFirst("video source[src], video[src]")
+            ?.let { it.attr("abs:src") }
+
+        if (!videoUrl.isNullOrBlank()) {
+            callback.invoke(
+                newExtractorLink(
+                    name,
+                    name,
+                    videoUrl,
+                    type = if (videoUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                ) {
+                    this.referer = data
+                }
+            )
+            return true
+        }
+
+        return false
     }
+
 }
