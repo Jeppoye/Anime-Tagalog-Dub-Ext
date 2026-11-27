@@ -66,18 +66,23 @@ class AnimeRevivalProvider : MainAPI() {
         val episodes = doc.select("a[href]").mapNotNull { el ->
             val epUrl = el.attr("abs:href")
             val epName = el.text().trim()
-            val isEpisodeLink = epUrl.startsWith(mainUrl) &&
-                epUrl != url &&
-                !epUrl.endsWith("/") &&
-                !epUrl.contains("/category/") &&
-                !epUrl.contains("/tag/") &&
-                epName.isNotEmpty() &&
-                !epName.equals("Home", ignoreCase = true) &&
-                !epName.contains("Anime Movies", ignoreCase = true) &&
-                !epName.contains("Anime Series", ignoreCase = true) &&
-                (epUrl.contains("/e") || epName.matches(Regex(".*\\d+.*")))
+            val lowerUrl = epUrl.lowercase()
+            val lowerName = epName.lowercase()
 
-            if (isEpisodeLink) {
+            val isBlocked = epUrl == url ||
+                epUrl == "$mainUrl/" ||
+                lowerUrl.contains("/category/") ||
+                lowerUrl.contains("/tag/") ||
+                lowerUrl.contains("/page/") ||
+                lowerName.isEmpty() ||
+                lowerName == "home" ||
+                lowerName.contains("anime movies") ||
+                lowerName.contains("anime series") ||
+                lowerName.contains("contact") ||
+                lowerName.contains("privacy") ||
+                lowerName.contains("dmca")
+
+            if (epUrl.startsWith(mainUrl) && !isBlocked) {
                 newEpisode(epUrl) {
                     this.name = epName
                 }
@@ -85,6 +90,7 @@ class AnimeRevivalProvider : MainAPI() {
                 null
             }
         }.distinctBy { it.data }
+
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = poster
