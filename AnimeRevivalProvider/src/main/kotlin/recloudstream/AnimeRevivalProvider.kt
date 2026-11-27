@@ -74,9 +74,20 @@ class AnimeRevivalProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
-        val title = doc.selectFirst("h1")?.text()?.trim() ?: name
+        val rawTitle = doc.selectFirst("h1")?.text()?.trim() ?: name
+        val title = rawTitle.replace(Regex("""\s*Tagalog(\s+Dub(bed)?)?$""", RegexOption.IGNORE_CASE), "").trim()
+            .ifBlank { rawTitle }
         val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
         val plot = doc.selectFirst("meta[name=description]")?.attr("content")
+
+        // Iwasan ang sidebar, nav, header, footer, at related/widget sections
+        val contentRoot = doc.selectFirst(
+            ".entry-content, .post-body, .episode-list, .ep-list, .episodes, article, main"
+        ) ?: doc
+
+        contentRoot.select(
+            "nav, header, footer, aside, .sidebar, .widget, .related, .recommended, .popular, .menu"
+        ).remove()
 
         val blockedKeywords = listOf(
             "download", "other", "opening", "ending",
@@ -86,18 +97,29 @@ class AnimeRevivalProvider : MainAPI() {
             "report dead links", "tv tokyo", "updated", "chatbox"
         )
 
-        val episodes = doc.select("a[href]").mapNotNull { el ->
+        val seriesKeywords = title.lowercase()
+            .split(Regex("""\W+"""))
+            .filter { it.length >= 4 && it !in setOf("anime", "series", "movie", "movies", "tagalog", "dub", "dubbed") }
+
+        val episodes = contentRoot.select("a[href]").mapNotNull { el ->
             val epUrl = el.attr("abs:href")
             val epName = el.text().trim()
             val lowerUrl = epUrl.lowercase()
             val lowerName = epName.lowercase()
 
             val isJunkName = epName.isBlank() ||
-                epName.length <= 2 ||
-                epName.all { !it.isLetter() } ||
+                epName.length <= 1 ||
                 blockedKeywords.any { lowerName.contains(it) }
 
+            // Karaniwang ibang show ang title kapag may "tagalog" sa pangalan at walang "episode"/"ep"
+            val looksLikeOtherSeries = lowerName.contains("tagalog") &&
+                !lowerName.contains("episode") &&
+                !Regex("""\bep\.?\s*\d+""", RegexOption.IGNORE_CASE).containsMatchIn(lowerName) &&
+                seriesKeywords.isNotEmpty() &&
+                seriesKeywords.none { lowerName.contains(it) }
+
             val isNonEpisode = isJunkName ||
+                looksLikeOtherSeries ||
                 lowerUrl.contains("download") ||
                 lowerUrl.contains("soundtrack") ||
                 lowerUrl.contains("sound-trip") ||
@@ -128,7 +150,7 @@ class AnimeRevivalProvider : MainAPI() {
             }
         }.distinctBy { it.data }
 
-        return newAnimeLoadResponse(title, url, TvType.Anime) {
+        return newAnimeLoadResponse(rawTitle, url, TvType.Anime) {
             this.posterUrl = poster
             this.plot = plot
             this.episodes = mutableMapOf(DubStatus.None to episodes)
