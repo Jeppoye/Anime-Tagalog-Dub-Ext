@@ -1,4 +1,4 @@
-dpackage recloudstream
+package recloudstream
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -123,7 +123,7 @@ class AnimeRevivalProvider : MainAPI() {
         }
     }
 
-        override suspend fun loadLinks(
+            override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
@@ -143,20 +143,9 @@ class AnimeRevivalProvider : MainAPI() {
         }.distinct()
 
         for (link in frameUrls) {
-            loadExtractor(link, data, subtitleCallback, callback)
-            if (link.contains(".m3u8") || link.contains(".mp4")) {
-                callback(
-                    newExtractorLink(
-                        this.name,
-                        this.name,
-                        link,
-                        ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = data
-                    }
-                )
+            if (loadExtractor(link, data, subtitleCallback, callback)) {
+                found = true
             }
-            found = true
         }
 
         val regexUrls = Regex("""https?://[^\s"'<>]+(?:\.m3u8|\.mp4)[^\s"'<>]*""")
@@ -165,21 +154,14 @@ class AnimeRevivalProvider : MainAPI() {
             .distinct()
 
         for (mediaUrl in regexUrls) {
-            callback(
-                newExtractorLink(
-                    this.name,
-                    this.name,
-                    mediaUrl,
-                    ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = data
-                }
-            )
-            found = true
+            if (loadExtractor(mediaUrl, data, subtitleCallback, callback)) {
+                found = true
+            }
         }
 
         return found
     }
+
 
     }
 
