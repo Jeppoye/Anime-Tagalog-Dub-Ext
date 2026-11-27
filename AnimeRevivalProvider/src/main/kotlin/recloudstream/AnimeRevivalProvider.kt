@@ -99,21 +99,11 @@ class AnimeRevivalProvider : MainAPI() {
             loadExtractor(iframeUrl, data, subtitleCallback, callback)
             return true
         }
-
         val videoUrl = doc.selectFirst("video source[src], video[src]")
-            ?.let { it.attr("abs:src") }
+            ?.attr("abs:src")
 
         if (!videoUrl.isNullOrBlank()) {
-            callback.invoke(
-                newExtractorLink(
-                    name,
-                    name,
-                    videoUrl,
-                    type = if (videoUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = data
-                }
-            )
+            loadExtractor(videoUrl, data, subtitleCallback, callback)
             return true
         }
 
