@@ -2,7 +2,10 @@ package recloudstream
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 class AnimeRevivalProvider : MainAPI() {
     override var mainUrl = "https://animerevival.xyz"
@@ -34,19 +37,32 @@ class AnimeRevivalProvider : MainAPI() {
         )
     }
 
-        override suspend fun search(query: String): List<SearchResponse> {
+    override suspend fun search(query: String): List<SearchResponse> {
         val doc = app.get("$mainUrl/?s=$query").document
         val cleanQuery = query.trim().lowercase()
-        val blockedTitles = setOf("home", "anime movies", "anime series", "contact", "about", "privacy policy", "dmca")
+        val blockedTitles = setOf(
+            "home", "anime movies", "anime series",
+            "contact", "about", "privacy policy", "dmca"
+        )
 
         return doc.select("a[href]").mapNotNull { el ->
             val title = el.text().trim()
             val href = el.attr("abs:href")
-            val isBlockedUrl = href.contains("/category/") || href.contains("/tag/") || href.contains("/page/")
-            val isBlockedTitle = title.isEmpty() || blockedTitles.any { title.equals(it, ignoreCase = true) }
-            val matchesQuery = title.lowercase().contains(cleanQuery) || href.lowercase().contains(cleanQuery)
+            val isBlockedUrl = href.contains("/category/") ||
+                href.contains("/tag/") ||
+                href.contains("/page/")
+            val isBlockedTitle = title.isEmpty() ||
+                blockedTitles.any { title.equals(it, ignoreCase = true) }
+            val matchesQuery = title.lowercase().contains(cleanQuery) ||
+                href.lowercase().contains(cleanQuery)
 
-            if (title.isNotEmpty() && href.startsWith(mainUrl) && href != "$mainUrl/" && !isBlockedUrl && !isBlockedTitle && matchesQuery) {
+            if (title.isNotEmpty() &&
+                href.startsWith(mainUrl) &&
+                href != "$mainUrl/" &&
+                !isBlockedUrl &&
+                !isBlockedTitle &&
+                matchesQuery
+            ) {
                 newAnimeSearchResponse(title, href, TvType.Anime) {
                     posterUrl = el.selectFirst("img")?.attr("abs:src")
                 }
@@ -56,32 +72,32 @@ class AnimeRevivalProvider : MainAPI() {
         }.distinctBy { it.url }
     }
 
-
-        override suspend fun load(url: String): LoadResponse {
+    override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url).document
         val title = doc.selectFirst("h1")?.text()?.trim() ?: name
         val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
         val plot = doc.selectFirst("meta[name=description]")?.attr("content")
 
-                val episodes = doc.select("a[href]").mapNotNull { el ->
+        val blockedKeywords = listOf(
+            "download", "other", "opening", "ending",
+            "soundtrack", "sound track", "sound trip",
+            "random videos", "requests", "register",
+            "account", "tv shows", "ost",
+            "report dead links", "tv tokyo", "updated", "chatbox"
+        )
+
+        val episodes = doc.select("a[href]").mapNotNull { el ->
             val epUrl = el.attr("abs:href")
             val epName = el.text().trim()
             val lowerUrl = epUrl.lowercase()
             val lowerName = epName.lowercase()
 
-            val isNonEpisode = lowerName.contains("download") ||
-                lowerName.contains("other") ||
-                lowerName.contains("opening") ||
-                lowerName.contains("ending") ||
-                lowerName.contains("soundtrack") ||
-                lowerName.contains("sound track") ||
-                lowerName.contains("sound trip") ||
-                lowerName.contains("random videos") ||
-                lowerName.contains("requests") ||
-                lowerName.contains("register") ||
-                lowerName.contains("account") ||
-                lowerName.contains("tv shows") ||
-                lowerName.contains("ost") ||
+            val isJunkName = epName.isBlank() ||
+                epName.length <= 2 ||
+                epName.all { !it.isLetter() } ||
+                blockedKeywords.any { lowerName.contains(it) }
+
+            val isNonEpisode = isJunkName ||
                 lowerUrl.contains("download") ||
                 lowerUrl.contains("soundtrack") ||
                 lowerUrl.contains("sound-trip") ||
@@ -95,7 +111,6 @@ class AnimeRevivalProvider : MainAPI() {
                 lowerUrl.contains("/category/") ||
                 lowerUrl.contains("/tag/") ||
                 lowerUrl.contains("/page/") ||
-                lowerName.isEmpty() ||
                 lowerName == "home" ||
                 lowerName.contains("anime movies") ||
                 lowerName.contains("anime series") ||
@@ -113,9 +128,6 @@ class AnimeRevivalProvider : MainAPI() {
             }
         }.distinctBy { it.data }
 
-
-
-
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = poster
             this.plot = plot
@@ -123,7 +135,7 @@ class AnimeRevivalProvider : MainAPI() {
         }
     }
 
-            override suspend fun loadLinks(
+    override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
@@ -134,11 +146,14 @@ class AnimeRevivalProvider : MainAPI() {
         var found = false
 
         val frameUrls = doc.select("iframe, embed, video, source").mapNotNull { el ->
-            val raw = el.attr("abs:src").ifBlank {
-                el.attr("abs:data-src").ifBlank {
-                    el.attr("src").ifBlank { el.attr("data-src") }
-                }
-            }.trim()
+            val raw = el.attr("abs:src")
+                .ifBlank { el.attr("abs:data-src") }
+                .ifBlank { el.attr("abs:data-url") }
+                .ifBlank { el.attr("abs:data-lazy-src") }
+                .ifBlank { el.attr("src") }
+                .ifBlank { el.attr("data-src") }
+                .ifBlank { el.attr("data-url") }
+                .trim()
             if (raw.isBlank()) null else fixUrl(raw)
         }.distinct()
 
@@ -148,21 +163,59 @@ class AnimeRevivalProvider : MainAPI() {
             }
         }
 
-        val regexUrls = Regex("""https?://[^\s"'<>]+(?:\.m3u8|\.mp4)[^\s"'<>]*""")
+        val dataAttrUrls = doc.select("[data-src], [data-url], [data-link], [data-embed], [data-player]")
+            .mapNotNull { el ->
+                val raw = el.attr("abs:data-src")
+                    .ifBlank { el.attr("abs:data-url") }
+                    .ifBlank { el.attr("abs:data-link") }
+                    .ifBlank { el.attr("abs:data-embed") }
+                    .ifBlank { el.attr("abs:data-player") }
+                    .trim()
+                if (raw.isBlank()) null else fixUrl(raw)
+            }.distinct()
+
+        for (attrUrl in dataAttrUrls) {
+            if (loadExtractor(attrUrl, data, subtitleCallback, callback)) {
+                found = true
+            }
+        }
+
+        val regexUrls = Regex(
+            """https?://[^\s"'<>\\)]+(?:\.m3u8|\.mp4|embed|player|stream)[^\s"'<>\\)]*""",
+            RegexOption.IGNORE_CASE
+        )
             .findAll(rawHtml)
-            .map { it.value.replace("\\/", "/") }
+            .map { match ->
+                match.value
+                    .replace("\\/", "/")
+                    .replace("&amp;", "&")
+                    .trimEnd(',', ';', ')', ']')
+            }
             .distinct()
 
         for (mediaUrl in regexUrls) {
-            if (loadExtractor(mediaUrl, data, subtitleCallback, callback)) {
+            if (mediaUrl.contains(".m3u8", ignoreCase = true) || mediaUrl.contains(".mp4", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = this.name,
+                        url = mediaUrl,
+                        type = if (mediaUrl.contains(".m3u8", ignoreCase = true)) {
+                            ExtractorLinkType.M3U8
+                        } else {
+                            ExtractorLinkType.VIDEO
+                        }
+                    ) {
+                        this.referer = data
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+                found = true
+            } else if (loadExtractor(mediaUrl, data, subtitleCallback, callback)) {
                 found = true
             }
         }
 
         return found
     }
-
-
-    }
-
-
+}
