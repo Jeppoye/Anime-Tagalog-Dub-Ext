@@ -63,11 +63,23 @@ class AnimeRevivalProvider : MainAPI() {
         val poster = doc.selectFirst("meta[property=og:image]")?.attr("content")
         val plot = doc.selectFirst("meta[name=description]")?.attr("content")
 
-        val episodes = doc.select("a[href]").mapNotNull { el ->
+                val episodes = doc.select("a[href]").mapNotNull { el ->
             val epUrl = el.attr("abs:href")
             val epName = el.text().trim()
             val lowerUrl = epUrl.lowercase()
             val lowerName = epName.lowercase()
+
+            val isNonEpisode = lowerName.contains("download") ||
+                lowerName.contains("other") ||
+                lowerName.contains("opening") ||
+                lowerName.contains("ending") ||
+                lowerName.contains("soundtrack") ||
+                lowerName.contains("sound track") ||
+                lowerName.contains("ost") ||
+                lowerUrl.contains("download") ||
+                lowerUrl.contains("soundtrack") ||
+                lowerUrl.contains("opening") ||
+                lowerUrl.contains("ending")
 
             val isBlocked = epUrl == url ||
                 epUrl == "$mainUrl/" ||
@@ -80,7 +92,8 @@ class AnimeRevivalProvider : MainAPI() {
                 lowerName.contains("anime series") ||
                 lowerName.contains("contact") ||
                 lowerName.contains("privacy") ||
-                lowerName.contains("dmca")
+                lowerName.contains("dmca") ||
+                isNonEpisode
 
             if (epUrl.startsWith(mainUrl) && !isBlocked) {
                 newEpisode(epUrl) {
@@ -90,6 +103,7 @@ class AnimeRevivalProvider : MainAPI() {
                 null
             }
         }.distinctBy { it.data }
+
 
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {
